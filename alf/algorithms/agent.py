@@ -205,7 +205,7 @@ class Agent(OnPolicyAlgorithm):
 
         if self._irm is not None:
             irm_step = self._irm.train_step(
-                time_step._replace(observation=observation), state=state.irm)
+                time_step._replace(observation=observation + [None]), state=state.irm)
             info = info._replace(irm=irm_step.info)
             new_state = new_state._replace(irm=irm_step.state)
 
@@ -238,7 +238,7 @@ class Agent(OnPolicyAlgorithm):
 
         if self._irm is not None:
             irm_step = self._irm.train_step(
-                exp._replace(observation=observation),
+                exp._replace(observation=observation + [None]),
                 state=state.irm,
                 calc_intrinsic_reward=False)
             info = info._replace(irm=irm_step.info)

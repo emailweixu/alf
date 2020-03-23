@@ -48,6 +48,7 @@ class DIAYNAlgorithm(Algorithm):
                  observation_spec=None,
                  hidden_size=(),
                  hidden_activation=torch.relu,
+                 use_action=False,
                  name="DIAYNAlgorithm"):
         """Create a DIAYNAlgorithm.
 
@@ -105,6 +106,7 @@ class DIAYNAlgorithm(Algorithm):
         if observation_spec is not None:
             self._observation_normalizer = AdaptiveNormalizer(
                 tensor_spec=observation_spec)
+        self._use_action = use_action
 
     def train_step(self,
                    time_step: TimeStep,
@@ -126,7 +128,11 @@ class DIAYNAlgorithm(Algorithm):
         """
         observations_aug = time_step.observation
         step_type = time_step.step_type
-        observation, skill = observations_aug
+        if self._use_action:
+            observation, skill, action = observations_aug
+            observation = torch.cat((observation, action), dim=-1)
+        else:
+            observation, skill, _ = observations_aug
         prev_skill = state.detach()
 
         # normalize observation for easier prediction

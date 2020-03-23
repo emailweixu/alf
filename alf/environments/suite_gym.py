@@ -52,7 +52,6 @@ def load(environment_name,
     """
     gym_spec = gym.spec(environment_name)
     gym_env = gym_spec.make()
-
     if max_episode_steps is None and gym_spec.max_episode_steps is not None:
         max_episode_steps = gym_spec.max_episode_steps
 
@@ -125,7 +124,6 @@ def wrap_env(gym_env,
         discount=discount,
         auto_reset=auto_reset,
     )
-
     if max_episode_steps > 0:
         env = time_limit_wrapper(env, max_episode_steps)
 

@@ -86,7 +86,6 @@ class Trainer(object):
         self._config = config
 
         self._random_seed = common.set_random_seed(self._random_seed)
-
         env = self._create_environment(random_seed=self._random_seed)
         common.set_global_env(env)
 
