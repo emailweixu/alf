@@ -1,0 +1,96 @@
+import alf.algorithms.sac_algorithm
+import alf.algorithms.agent
+import alf.trainers.policy_trainer
+import alf.algorithms.diayn_algorithm
+
+import alf.algorithms.goal_generator
+import alf.networks.critic_networks
+
+
+
+# skill related
+num_of_skills=20
+skill_feature_size=%num_of_skills # one-hot representation
+
+# environment config
+NUM_PARALLEL_ENVIRONMENTS=16
+create_environment.env_load_fn=@suite_gym.load
+create_environment.num_parallel_environments=%NUM_PARALLEL_ENVIRONMENTS
+create_environment.env_name="HalfCheetah-v2"
+
+
+# algorithm config
+observation_spec=@get_observation_spec()
+action_spec=@get_action_spec()
+goal/alf.TensorSpec.shape=(%skill_feature_size,)
+
+
+actor/ActorDistributionNetwork.input_tensor_spec=[%observation_spec, @goal/alf.TensorSpec()]
+actor/ActorDistributionNetwork.preprocessing_combiner=@actor/NestConcat()
+actor/ActorDistributionNetwork.action_spec=%action_spec
+actor/ActorDistributionNetwork.fc_layer_params=(200, 200)
+
+actor/ActorDistributionNetwork.continuous_projection_net_ctor=@NormalProjectionNetwork
+
+NormalProjectionNetwork.state_dependent_std=True
+NormalProjectionNetwork.squash_mean=True
+NormalProjectionNetwork.scale_distribution=False
+NormalProjectionNetwork.std_transform=@clipped_exp
+
+
+critic/CriticNetwork.input_tensor_spec=([%observation_spec, @goal/alf.TensorSpec()], %action_spec)
+critic/CriticNetwork.observation_preprocessing_combiner=@critic/NestConcat()
+critic/CriticNetwork.joint_fc_layer_params=(200, 200)
+
+
+
+
+feature_size=200
+diayn/EncodingNetwork.input_tensor_spec=%observation_spec
+diayn/EncodingNetwork.fc_layer_params=(%feature_size,)
+diayn/create_discrete_skill_spec.num_of_skills=%num_of_skills
+
+DIAYNAlgorithm.skill_spec=@diayn/create_discrete_skill_spec()
+DIAYNAlgorithm.encoding_net=@diayn/EncodingNetwork()
+DIAYNAlgorithm.hidden_size=(%feature_size,)
+
+# goal generator config
+RandomCategoricalGoalGenerator.observation_spec=%observation_spec
+RandomCategoricalGoalGenerator.num_of_goals=%num_of_skills
+
+SacAlgorithm.actor_network=@actor/ActorDistributionNetwork()
+SacAlgorithm.critic_network=@critic/CriticNetwork()
+SacAlgorithm.target_update_tau=0.005
+OneStepTDLoss.td_error_loss_fn=@losses.element_wise_squared_loss
+
+
+# agent config with the goal generator
+Agent/Adam.lr=3e-4
+Agent.intrinsic_reward_coef=1
+Agent.extrinsic_reward_coef=0
+Agent.action_spec=%action_spec
+Agent.rl_algorithm_cls=@SacAlgorithm
+Agent.intrinsic_reward_module=@DIAYNAlgorithm()
+Agent.goal_generator=@RandomCategoricalGoalGenerator()
+Agent.optimizer=@Agent/Adam()
+
+
+
+# training config
+TrainerConfig.initial_collect_steps=1000
+TrainerConfig.mini_batch_length=2
+TrainerConfig.unroll_length=1
+TrainerConfig.mini_batch_size=128
+TrainerConfig.num_updates_per_train_step=1
+TrainerConfig.whole_replay_buffer_training=False
+TrainerConfig.algorithm_ctor=@Agent
+TrainerConfig.num_iterations=1000000
+#TrainerConfig.checkpoint_interval=10000
+TrainerConfig.evaluate=0
+TrainerConfig.eval_interval=500
+TrainerConfig.debug_summaries=True
+TrainerConfig.summarize_grads_and_vars=0
+TrainerConfig.summary_interval=500
+TrainerConfig.use_rollout_state=True
+
+ReplayBuffer.max_length=1000000
