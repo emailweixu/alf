@@ -140,6 +140,8 @@ def histogram(name, data, step=None, bins=None, walltime=None, max_bins=None):
     """
     if bins is None:
         bins = _default_bins
+    if type(bins) == torch.Tensor:
+        bins = bins.cpu().numpy()
     _summary_writer_stack[-1].add_histogram(
         name, data, step, bins=bins, walltime=walltime, max_bins=max_bins)
 

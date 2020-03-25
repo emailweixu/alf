@@ -59,7 +59,7 @@ def histogram_discrete(name, data, bucket_min, bucket_max, step=None):
             `alf.summary.get_global_counter()`
     """
     alf.summary.histogram(
-        name, data, step=step, bins=torch.arange(bucket_min, bucket_max + 1))
+        name, data, step=step, bins=torch.arange(int(bucket_min), bucket_max + 1))
 
 
 @_summary_wrapper

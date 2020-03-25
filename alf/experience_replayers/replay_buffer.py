@@ -44,7 +44,7 @@ def _convert_device(nests):
     else:
         raise NotImplementedError("Unknown device %s" % d)
 
-
+@gin.configurable
 class ReplayBuffer(nn.Module):
     """Replay buffer.
 

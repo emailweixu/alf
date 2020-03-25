@@ -111,7 +111,7 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
             train_state_spec=self._train_state_spec, 
             name=name)
         self._rl = rl
-        self._rl.set_exp_replayer("uniform", common._env.batch_size, max_length=replay_buffer_max_length)
+        self._rl.set_exp_replayer("uniform", common._env.batch_size, max_length=int(replay_buffer_max_length))
 
 
     def _trainable_attributes_to_ignore(self):
@@ -234,6 +234,6 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
         self._rl_train()
         info = info.rollout_info
         info = info._replace(goal=torch.argmax(info.goal, dim=-1))
-        summarize_action(info.goal, self._action_spec, name=self._name)
+        summarize_action(info.goal.detach().cpu().numpy(), self._action_spec, name=self._name)
         return LossInfo()
 

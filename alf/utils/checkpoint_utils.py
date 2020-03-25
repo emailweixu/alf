@@ -95,6 +95,7 @@ class Checkpointer(object):
                 the checkpoint as a suffix. This function will also save a copy
                 of the latest checkpoint in a file named 'latest'.
         """
+        import pdb; pdb.set_trace()
         self._global_step = global_step
         f_path = os.path.join(self._ckpt_dir, "ckpt-{0}".format(global_step))
         state = {
