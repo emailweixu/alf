@@ -335,8 +335,12 @@ class RLAlgorithm(Algorithm):
         exp = dist_utils.distributions_to_params(exp)
 
         if self._exp_replayer is None and self._exp_replayer_type:
-            self._set_exp_replayer(self._exp_replayer_type,
-                                   self._config.num_envs)
+            if self._config:
+                self._set_exp_replayer(self._exp_replayer_type,
+                                    self._config.num_envs)
+            else:
+                self._set_exp_replayer(self._exp_replayer_type,
+                                    self._exp_replayer_num_envs)
 
         for observer in self._observers:
             observer(exp)
@@ -359,7 +363,7 @@ class RLAlgorithm(Algorithm):
             self.summarize_reward("rollout_reward/extrinsic",
                                   training_info.reward)
 
-        if self._config.summarize_action_distributions:
+        if self._config and self._config.summarize_action_distributions:
             field = alf.nest.find_field(training_info.rollout_info,
                                         'action_distribution')
             if len(field) == 1:
@@ -388,20 +392,21 @@ class RLAlgorithm(Algorithm):
         Returns:
             None
         """
-        if self._config.summarize_grads_and_vars:
-            summary_utils.summarize_variables(params)
-            summary_utils.summarize_gradients(params)
-        if self._debug_summaries:
-            summary_utils.summarize_action(training_info.action,
-                                           self._action_spec)
-            summary_utils.summarize_loss(loss_info)
+        if self._config:
+            if self._config.summarize_grads_and_vars:
+                summary_utils.summarize_variables(params)
+                summary_utils.summarize_gradients(params)
+            if self._debug_summaries:
+                summary_utils.summarize_action(training_info.action,
+                                            self._action_spec)
+                summary_utils.summarize_loss(loss_info)
 
-        if self._config.summarize_action_distributions:
-            field = alf.nest.find_field(training_info.info,
-                                        'action_distribution')
-            if len(field) == 1:
-                summary_utils.summarize_action_dist(field[0],
-                                                    self._action_spec)
+            if self._config.summarize_action_distributions:
+                field = alf.nest.find_field(training_info.info,
+                                            'action_distribution')
+                if len(field) == 1:
+                    summary_utils.summarize_action_dist(field[0],
+                                                        self._action_spec)
 
     def summarize_metrics(self):
         """Generate summaries for metrics `AverageEpisodeLength`, `AverageReturn`..."""

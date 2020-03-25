@@ -22,7 +22,7 @@ from alf.networks.network import Network
 
 
 from alf.algorithms.algorithm import Algorithm
-from alf.algorithms.agent import Agent
+from alf.algorithms.agent import Agent, AgentState, AgentInfo
 from alf.algorithms.actor_critic_algorithm import ActorCriticAlgorithm
 from alf.algorithms.entropy_target_algorithm import EntropyTargetAlgorithm
 from alf.algorithms.icm_algorithm import ICMAlgorithm
@@ -33,17 +33,6 @@ from alf.data_structures import (TimeStep, Experience, LossInfo, namedtuple,
 from alf.utils.common import cast_transformer
 from alf.utils.math_ops import add_ignore_empty
 from alf.algorithms.config import TrainerConfig
-
-AgentState = namedtuple(
-    "AgentState", ["rl", "irm", "goal_generator"], default_value=())
-
-AgentInfo = namedtuple(
-    "AgentInfo", ["rl", "irm", "goal_generator", "entropy_target"],
-    default_value=())
-
-AgentLossInfo = namedtuple(
-    "AgentLossInfo", ["rl", "irm", "goal_generator", "entropy_target"],
-    default_value=())
 
 @gin.configurable
 class HierarchicalAgent(Agent):
@@ -72,7 +61,7 @@ class HierarchicalAgent(Agent):
 
         if self._goal_generator is not None:
             goal_step = self._goal_generator.rollout_step(
-                time_step._replace(observation=observation),
+                time_step,
                 state.goal_generator)
             info = info._replace(goal_generator=goal_step.info)
             new_state = new_state._replace(goal_generator=goal_step.state)
@@ -80,16 +69,16 @@ class HierarchicalAgent(Agent):
             rl_observation = [observation, goal_step.output]
             irm_observation = rl_observation
         
-        rl_step = self._rl_algorithm.rollout(
-            time_step._replace(observation=rl_observation), state.rl, mode)
+        rl_step = self._rl_algorithm.rollout_step(
+            time_step._replace(observation=rl_observation), state.rl)
         if self._goal_generator is not None:
-            irm_observation.append(rl_step.action)
+            irm_observation.append(rl_step.output)
         if self._irm is not None:
             irm_step = self._irm.train_step(
                 time_step._replace(observation=irm_observation),
                 state=state.irm)
-            info = info._replace(irm=icm_step.info)
-            new_state = new_state._replace(irm=icm_step.state)
+            info = info._replace(irm=irm_step.info)
+            new_state = new_state._replace(irm=irm_step.state)
 
 
         new_state = new_state._replace(rl=rl_step.state)
@@ -107,43 +96,40 @@ class HierarchicalAgent(Agent):
                 step_type=time_step.step_type)
             info = info._replace(entropy_target=et_step.info)
 
-        return AlgStep(action=rl_step.action, state=new_state, info=info)
+        return AlgStep(output=rl_step.output, state=new_state, info=info)
 
     def train_step(self, exp: Experience, state):
         new_state = AgentState()
         info = AgentInfo()
-        observation = self._encode(exp)
+        observation = exp.observation
 
         if self._goal_generator is not None:
             goal_step = self._goal_generator.train_step(
-                exp._replace(observation=observation),
-                state.goal_generator,
-                mode=RLAlgorithm.OFF_POLICY_TRAINING)
+                exp._replace(rollout_info=exp.rollout_info.goal_generator),
+                state.goal_generator)
 
-            #info = info._replace(goal_generator=goal_step.info)
+            info = info._replace(goal_generator=goal_step.info)
             # Have to keep rollout state and training state specs consistent
             new_state = new_state._replace(goal_generator=goal_step.state)
 
-            goal = exp.rollout_info.goal_generator.action
-
-            rl_observation = [observation, goal]
+            rl_observation = [observation, goal_step.output]
             irm_observation = [observation,
-                                #exp.rollout_info.goal_generator.observation],
-                                goal]
+                                goal_step.output]
 
         rl_step = self._rl_algorithm.train_step(
-            exp._replace(observation=rl_observation), state.rl)
+            exp._replace(observation=rl_observation, rollout_info=exp.rollout_info.rl), 
+            state.rl)
         
         if self._goal_generator is not None:
-            irm_observation.append(rl_step.action)
+            irm_observation.append(rl_step.output)
         if self._irm is not None:
             # compute intrinsic rewards with update-to-date parameters when training
-            irm_step = self._icm.train_step(
+            irm_step = self._irm.train_step(
                 exp._replace(observation=irm_observation),
                 state=state.irm,
                 calc_intrinsic_reward=False)
-            info = info._replace(irm=icm_step.info)
-            new_state = new_state._replace(irm=icm_step.state)
+            info = info._replace(irm=irm_step.info)
+            new_state = new_state._replace(irm=irm_step.state)
 
         new_state = new_state._replace(rl=rl_step.state)
         info = info._replace(rl=rl_step.info)
@@ -157,7 +143,7 @@ class HierarchicalAgent(Agent):
                 rl_step.info.action_distribution, step_type=exp.step_type)
             info = info._replace(entropy_target=et_step.info)
 
-        return AlgStep(action=rl_step.action, state=new_state, info=info)
+        return AlgStep(output=rl_step.output, state=new_state, info=info)
 
 #    def calc_loss(self, training_info):
 #        """Calculate loss."""

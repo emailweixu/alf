@@ -217,7 +217,10 @@ class SacAlgorithm(OffPolicyAlgorithm):
         if self.need_full_rollout_state():
             raise NotImplementedError("Storing RNN state to replay buffer "
                                       "is not supported by SacAlgorithm")
-        return self._predict(time_step, state, epsilon_greedy=1.0)
+        policy_step = self._predict(time_step, state, epsilon_greedy=1.0)
+        if self._rollout_info_spec is None:
+            self._rollout_info_spec = dist_utils.extract_spec(policy_step.info)
+        return policy_step
 
     def _actor_train_step(self, exp: Experience, state: SacActorState,
                           action_distribution, action, log_pi):

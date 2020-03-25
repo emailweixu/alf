@@ -31,7 +31,7 @@ import alf.utils.common as common
 
 
 GoalState = namedtuple("GoalState", ["goal", "observation", "steps", "rl_reward", "rl_discount", "rl"], default_value=())
-GoalInfo = namedtuple("GoalInfo", ["action", "observation", "switch_skills"], default_value=())
+GoalInfo = namedtuple("GoalInfo", ["goal", "observation", "switch_skills"], default_value=())
 
 class ScalarSpec(TensorSpec):
     """Simplified spec for scalar tensor."""
@@ -50,8 +50,12 @@ def create_time_step_spec(num_of_steps):
     return TensorSpec((num_of_steps + 1,))
 
 
-def create_train_state_spec(num_of_goals, rl_algorithm_cls, observation_spec):
-    rl = rl_algorithm_cls()
+def create_train_state_spec(num_of_goals, rl_algorithm_cls, observation_spec, name):
+    import inspect
+    signature = inspect.signature(rl_algorithm_cls)
+    default_name = signature.parameters['name'].default
+    name = name + '/' + default_name
+    rl = rl_algorithm_cls(name=name, debug_summaries=True)
     train_state_spec = GoalState(
         goal=TensorSpec((num_of_goals, ), dtype=torch.float32),
         observation=observation_spec,
@@ -96,7 +100,11 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
         self._mini_batch_length = mini_batch_length
         self._initial_collect_steps = initial_collect_steps
         #self._train_state_spec=train_state_spec
-        rl, self._train_state_spec = create_train_state_spec(num_of_goals, rl_algorithm_cls, observation_spec)
+        rl, self._train_state_spec = create_train_state_spec(
+            num_of_goals, 
+            rl_algorithm_cls, 
+            observation_spec,
+            name)
         super().__init__(
             observation_spec=observation_spec,
             action_spec=goal_spec,
@@ -121,11 +129,9 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
         if rollout == True:
             rl_step = dist_utils.distributions_to_params(rl_step)
             exp = make_experience(rl_time_step, rl_step, state.rl)
-            import pdb; pdb.set_trace()
             self._rl.observe(exp)
-
-        return GoalState(
-            goal=torch.nn.functional.one_hot(rl_step.action, self._num_of_goals),
+        return state._replace(
+            goal=torch.nn.functional.one_hot(rl_step.output, self._num_of_goals).to(torch.float32),
             observation=time_step.observation, # record the init obs for the next K steps
             steps=torch.zeros_like(state.steps),
             rl_reward=torch.zeros_like(state.rl_reward),
@@ -135,9 +141,10 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
 
     def _update_goal(self, time_step, state, switch_skills, step_type, rollout):
         new_goal_mask = ((step_type == StepType.FIRST) | switch_skills) | (step_type == StepType.LAST)
-        new_goal = self._generate_goal(time_step, state, rollout)
-        new_goal = torch.where(new_goal_mask, new_goal, state.goal)
-        return new_goal
+        new_goal_mask = new_goal_mask.unsqueeze(dim=-1)
+        new_state = self._generate_goal(time_step, state, rollout)
+        new_state = new_state._replace(goal=torch.where(new_goal_mask, new_state.goal, state.goal))
+        return new_state
 
     def _step(self, time_step: TimeStep, state, rollout):
         """Perform one step of rollout or prediction.
@@ -166,20 +173,20 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
         switch_skills = torch.fmod(state.steps,
                                 self._num_steps_before_policy_switch) == 0
 
-        new_goal = self._update_goal(time_step, state, switch_skills, step_type, rollout)
+        new_state = self._update_goal(time_step, state, switch_skills, step_type, rollout)
 
-        new_state = new_state._replace(steps=new_state.steps + 1, goal=new_goal)
+        new_state = new_state._replace(steps=new_state.steps + 1)
 
         return AlgStep(
             output=(new_state.goal),
             state=new_state,
-            info=GoalInfo(action=new_state.goal,
+            info=GoalInfo(goal=new_state.goal,
                             observation=state.observation, # should be from the old state
                             )
         )
 
     def rollout_step(self, time_step: TimeStep, state):
-        self._step(time_step, state, rollout=True)
+        return self._step(time_step, state, rollout=True)
 
     def predict_step(self, time_step: TimeStep, state, epsilon_greedy):
         return self._step(time_step, state, rollout=False)
@@ -209,15 +216,24 @@ class LearnedCategoricalGoalGenerator(RLAlgorithm):
 
     def _rl_train(self):
         if self._rl._exp_replayer._buffer.total_size() > self._initial_collect_steps:
-            self._rl.train(
+            experience = self._rl._exp_replayer.replay(
+                sample_batch_size=self._mini_batch_size,
+                mini_batch_length=self._mini_batch_length)
+            self._rl._train_experience(
+                experience, 
+                num_updates=1, 
                 mini_batch_size=self._mini_batch_size,
                 mini_batch_length=self._mini_batch_length,
-                whole_replay_buffer_training=False,
-                clear_replay_buffer=False)
+                update_counter_every_mini_batch=False)
+                #mini_batch_size=self._mini_batch_size,
+                #mini_batch_length=self._mini_batch_length,
+                #whole_replay_buffer_training=False,
+                #clear_replay_buffer=False)
 
     def calc_loss(self, info: TrainingInfo):
         self._rl_train()
-        info = info._replace(action=torch.argmax(info.action, dim=-1))
-        summarize_action(info.action, self._action_spec, name=self._name)
+        info = info.rollout_info
+        info = info._replace(goal=torch.argmax(info.goal, dim=-1))
+        summarize_action(info.goal, self._action_spec, name=self._name)
         return LossInfo()
 
