@@ -126,8 +126,7 @@ class HierarchicalAgent(Agent):
             # compute intrinsic rewards with update-to-date parameters when training
             irm_step = self._irm.train_step(
                 exp._replace(observation=irm_observation),
-                state=state.irm,
-                calc_intrinsic_reward=False)
+                state=state.irm)
             info = info._replace(irm=irm_step.info)
             new_state = new_state._replace(irm=irm_step.state)
 
@@ -144,36 +143,6 @@ class HierarchicalAgent(Agent):
             info = info._replace(entropy_target=et_step.info)
 
         return AlgStep(output=rl_step.output, state=new_state, info=info)
-
-#    def calc_loss(self, training_info):
-#        """Calculate loss."""
-#        def _update_loss(loss_info, training_info, name, algorithm, ignore_name=False):
-#            if algorithm is None:
-#                return loss_info
-#            if not ignore_name:
-#                info = getattr(training_info.info, name)
-#            else:
-#                info = training_info
-#
-#            new_loss_info = algorithm.calc_loss(info)
-#            return LossInfo(
-#                loss=add_ignore_empty(loss_info.loss, new_loss_info.loss),
-#                scalar_loss=add_ignore_empty(loss_info.scalar_loss,
-#                                             new_loss_info.scalar_loss),
-#                extra=loss_info.extra._replace(**{name: new_loss_info.extra}))
-#
-#        assert training_info.rollout_info != ()
-#
-#        rl_loss_info = self._rl_algorithm.calc_loss(
-#            training_info._replace(info=training_info.info.rl, reward=
-#            training_info.info.irm.reward)) # updated intrinsic rewards
-#        loss_info = rl_loss_info._replace(
-#            extra=AgentLossInfo(rl=rl_loss_info.extra))
-#        loss_info = _update_loss(loss_info, training_info, 'goal_generator', self._goal_generator)
-#        loss_info = _update_loss(loss_info, training_info, 'irm', self._icm)
-#        loss_info = _update_loss(loss_info, training_info, 'entropy_target',
-#                                    self._entropy_target_algorithm)
-#        return loss_info
 
     def preprocess_experience(self, exp: Experience):
         #reward = self.calc_training_reward(exp.reward, exp.rollout_info)
